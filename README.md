@@ -12,11 +12,12 @@ Needs [Bun](https://bun.sh) 1.4 or newer at runtime -- the pty is built on
 
 Globally, the usual way:
 
-    bun run build && npm install -g .
+    npm install -g claude-highlight
 
 That installs `claude-highlight` on your PATH and its man page alongside, so
 `man claude-highlight` works. The published package is just `dist/`, the man
-page and this README: 30 KB, no dependencies.
+page and this README: 30 KB, no dependencies. From a clone instead, it is
+`bun run build && npm install -g .`
 
 Or from a checkout, with no install step at all -- Bun runs the TypeScript
 directly, so an edit takes effect on the next run:

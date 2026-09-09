@@ -1,5 +1,5 @@
 {
-  "name": "@noahpeterson/claude-highlight",
+  "name": "claude-highlight",
   "version": "1.0.0",
   "type": "module",
   "description": "Colors epistemic markers in Claude Code's output, live, in the terminal",

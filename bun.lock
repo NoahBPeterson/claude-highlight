@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@noahpeterson/claude-highlight",
+      "name": "claude-highlight",
       "devDependencies": {
         "@types/bun": "^1.4.0",
         "bun-types": "^1.4.1",
