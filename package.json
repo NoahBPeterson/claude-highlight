@@ -42,7 +42,7 @@
     "linux"
   ],
   "scripts": {
-    "build": "rm -rf dist && bun build src/claude-highlight.ts src/pty-read-worker.ts src/pty-write-worker.ts --target=node --packages=external --splitting --outdir=dist",
+    "build": "rm -rf dist && bun build src/claude-highlight.ts src/pty-read-worker.ts src/pty-write-worker.ts --target=node --banner=\"':' //; exec \\\"\\$(command -v node || command -v bun)\\\" \\\"\\$0\\\" \\\"\\$@\\\"\" --packages=external --splitting --outdir=dist",
     "prepack": "bun run build",
     "typecheck": "tsc -p tsconfig.json",
     "test:pty": "node test/pty-smoke.ts",

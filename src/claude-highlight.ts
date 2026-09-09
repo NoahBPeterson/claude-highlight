@@ -1,4 +1,9 @@
-#!/usr/bin/env node
+#!/bin/sh
+':' //; exec "$(command -v node || command -v bun)" "$0" "$@"
+// The two lines above are a shell trampoline: sh runs the exec, node and bun
+// see a shebang, a string, and a comment. Whichever runtime is on PATH runs
+// this file, so a bun-only machine works too. The bundler drops the string as
+// dead code, which is why the build re-adds it as a banner.
 /** claude-highlight -- run Claude Code behind a PTY that colors epistemic markers.
  *
  * Spawns the real `claude` on a pseudo-terminal and forwards bytes both ways,

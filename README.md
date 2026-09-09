@@ -2,26 +2,23 @@
 
 Colors the hedges in Claude Code's output, live, as it streams.
 
-Words like *likely*, *seems*, *assuming*, *untested* and *obviously* get a
-color so you can see at a glance where the model is guessing, admitting a gap,
-or overclaiming. Nothing else about the session changes.
+Words like *likely*, *seems*, *assuming*, *untested* and *obviously* get a color so you can see at a glance where the model is guessing, admitting a gap, or overclaiming. Nothing else about the session changes.
 
 ## Install
 
     npm install -g claude-highlight
+    bun install -g claude-highlight   # equivalent, minus the man page
 
-Needs Node 22+ (or Bun 1.4+) and macOS or Linux. Installs the `claude-highlight`
-command and its man page.
+This requires Node 22+ or Bun 1.4+, and macOS or Linux. The installed command
+runs on whichever of the two is on your PATH.
 
 ## Use
 
     claude-highlight              # instead of: claude
     claude-highlight --resume     # any claude arguments pass straight through
 
-Press **F9** during a session to toggle categories. Changes apply immediately
-and are saved.
+Press **F9** during a session to toggle categories. Changes apply immediately and are saved.
 
-To make it the default, add `alias claude='claude-highlight'` to your shell rc.
 Scripts and hooks still get the real `claude`.
 
     claude-highlight --hl-selftest   # prints sample text; check that color shows up
