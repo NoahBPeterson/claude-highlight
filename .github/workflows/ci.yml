@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # macOS is arm64, which is the one platform where ioctl's variadic
+    # arguments go on the stack; Linux is the platform this has never actually
+    # run on, and the reason the matrix exists.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # test_wrapper and test_paste drive the wrapper against a stand-in child
+      # written in Python -- deliberately another language, since the wrapper
+      # must not care what it is wrapping.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Suites, against the sources
+        run: bun run test:all
+
+      - name: Suites, against the built artifact
+        run: bun run test:dist

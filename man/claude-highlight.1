@@ -1,0 +1,145 @@
+.TH CLAUDE\-HIGHLIGHT 1 "2026-09-04" "claude-highlight 1.0.0" "User Commands"
+.SH NAME
+claude\-highlight \- run Claude Code behind a PTY that colors epistemic markers
+.SH SYNOPSIS
+.B claude\-highlight
+.RI [ options ]
+.RI [ "claude args" ...]
+.SH DESCRIPTION
+.B claude\-highlight
+spawns the real
+.B claude
+on a pseudo\-terminal and forwards bytes both ways, injecting SGR color around
+words that mark a claim as unverified \(em hedges, admitted gaps, assumptions,
+impressions, unearned certainty.
+.PP
+Because SGR is zero\-width, the child's layout math is untouched: the wrapper
+never adds, removes or moves a cell, so wrapping, cursor addressing and the
+child's own repaint diff all behave exactly as they would without it. Arguments
+it does not recognise are passed straight through to
+.BR claude .
+.PP
+A highlight can also be taken back. Claude Code repaints with a cell\-level
+diff, so a cell it skips would otherwise keep a color the word that earned it
+no longer justifies; the wrapper mirrors the screen and rewrites those cells at
+the end of the frame that stranded them.
+.PP
+What you type is left alone. The input box is found on screen \(em the band
+between the last two full\-width rules \(em and nothing inside it is ever
+painted.
+.SH OPTIONS
+.TP
+.B \-\-hl\-help
+Print a short usage summary and exit.
+.TP
+.B \-\-hl\-selftest
+Push sample text through the real filter and print it, then list the
+categories and any config words that were rejected. The prose lines should
+show color and the code and user\-message lines should not. Run this first when
+a session looks unhighlighted.
+.TP
+.B \-\-hl\-menu
+Print the plugin panel as it would be drawn, without starting a session.
+.TP
+.BR \-\-hl\-palette " [" all ]
+Print the colors worth considering, painted in the terminal that has to show
+them, with the code to put in the config beside each.
+.B all
+adds the full 256\-color ramp.
+.TP
+.BI \-\-hl\-record " PATH"
+Tee both sides of the session to
+.IB PATH .raw
+(what Claude Code emitted) and
+.IB PATH .out
+(what was handed to the terminal). Replaying the former through the filter
+reproduces the latter exactly, which is how a rendering oddity gets settled
+after the fact.
+.SH PLUGIN MENU
+.B F9
+opens a panel over the bottom of the screen for toggling categories live;
+terminals that cannot send F9 can be bound to emit its sequence,
+.BR "ESC [ 20 ~" .
+.PP
+.RS
+.PD 0
+.TP 14
+.BR Up ", " Down
+move the selection
+.TP
+.BR Space ", " Enter
+toggle the selected category
+.TP
+.BR q ", " Esc ", " F9
+close the panel and save
+.PD
+.RE
+.PP
+Toggles are written to the config file, so they persist and are shared across
+every workspace. A paste that arrives while the panel is open closes it and is
+delivered to the child rather than eaten as menu keys.
+.SH CONFIGURATION
+.I ~/.config/claude-highlight/config.json
+is created on first run and re\-read whenever it changes, so an edit takes
+effect on the next line Claude Code prints. It holds a
+.B categories
+map \(em each with
+.BR color ", " on ", " desc " and an " add
+list of extra words \(em plus
+.BR custom ", " annotations ", " prose_only " and " idle_repaint .
+.PP
+Added words are matched literally, so punctuation needs no escaping and a typo
+cannot be a broken regex that takes the session down. Prefix a word with
+.B re:
+to opt into a raw pattern; anything that will not compile is dropped and
+listed by
+.BR \-\-hl\-selftest .
+.SH ENVIRONMENT
+.TP
+.B XDG_CONFIG_HOME
+Base directory for the config file. Defaults to
+.IR ~/.config .
+.TP
+.B CLAUDE_HIGHLIGHT_CMD
+Program to run instead of
+.BR claude .
+Exists so the wrapper can be exercised against a stand\-in child without
+launching a session.
+.TP
+.B COLORTERM
+.B truecolor
+or
+.B 24bit
+selects the panel's truecolor palette; anything else falls back to 256\-color.
+.TP
+.BR LC_ALL ", " LC_CTYPE ", " LANG
+A UTF\-8 locale selects box\-drawing glyphs for the panel; otherwise it is drawn
+in ASCII. Row widths are identical either way.
+.TP
+.B COLUMNS
+Width used by
+.B \-\-hl\-menu
+and
+.B \-\-hl\-palette
+when standard output is not a terminal.
+.SH FILES
+.TP
+.I ~/.config/claude-highlight/config.json
+Category toggles, colors and added words.
+.SH EXIT STATUS
+The child's exit status, or 128 plus the signal number if the child was
+killed by a signal.
+.SH NOTES
+Requires Bun 1.4 or newer: the pty is built on
+.BR openpty (3)
+through
+.BR bun:ffi ,
+with the blocking reads and writes on worker threads.
+.PP
+Unix only. The winsize ioctls and termios have no Windows equivalent, and a
+port there means ConPTY.
+.SH SEE ALSO
+.BR claude (1),
+.BR openpty (3),
+.BR termios (4),
+.BR pty (7)

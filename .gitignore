@@ -1,0 +1,29 @@
+node_modules/
+
+# Build output and packed tarballs: `bun run build` remakes dist/ from src/,
+# and it is what package.json's bin points at.
+dist/
+*.tgz
+
+# A scan of this machine's own transcripts: session UUIDs and project paths,
+# none of it anyone else's business. See "Where the lexicon's judgement calls
+# came from" in the README for what it is, what it showed, and the one command
+# that regenerates it.
+hedge_results.json
+
+# Recorded sessions: --hl-record writes the child's raw output next to what we
+# handed the terminal, for settling a rendering question after the fact.
+*.raw
+*.out
+
+# Python bytecode from the original implementation.
+__pycache__/
+
+# The Python original this was ported from. Kept on disk as the reference the
+# suites are diffed against, deliberately not carried into the repository.
+*.py
+/claude-highlight
+
+# Session transcripts and scratch notes from the port itself.
+session-*.md
+*.txt

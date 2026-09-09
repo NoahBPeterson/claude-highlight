@@ -1,0 +1,25 @@
+# NOTE the direction: this is a denylist. Anything NOT named here ships, so a
+# new top-level file is published by default -- the opposite of .gitignore's
+# habit, and the reason each block below says what it is keeping out.
+
+# The Python original. It is the reference the port is diffed against, which
+# is a development concern, not something to install on someone's machine.
+*.py
+claude-highlight
+__pycache__/
+
+# TypeScript sources and the suites that check them: dist/ is what runs, and
+# the tests spawn processes and want a checkout, not an install.
+src/
+test/
+tsconfig.json
+bun.lock
+
+# Working notes, transcripts and scan output from building this.
+*.md
+!README.md
+*.txt
+hedge_results.json
+*.raw
+*.out
+*.heapsnapshot
