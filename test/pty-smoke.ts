@@ -15,7 +15,11 @@ const ENV = environ();
 
 // 1. byte fidelity, including high bytes, through the pty
 {
-  const p = ptySpawn("/bin/sh", ["-c", 'printf "A\\xff\\xfe\\x1b[31mZ"; exit 3'],
+  // Octal, not \xHH: /bin/sh is dash on most Linux distributions, and hex
+  // escapes are a bash/GNU extension its printf does not implement -- so the
+  // hex form emitted the literal text there and this check failed on CI while
+  // passing on macOS, where /bin/sh is bash.
+  const p = ptySpawn("/bin/sh", ["-c", 'printf "A\\377\\376\\033[31mZ"; exit 3'],
     { rows: 24, cols: 80, env: ENV });
   let got = Buffer.alloc(0);
   p.onData(c => { got = Buffer.concat([got, c]); });

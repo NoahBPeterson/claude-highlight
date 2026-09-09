@@ -29,8 +29,18 @@ for (const suite of SUITES) {
     stderr: "pipe",
   });
   const out = proc.stdout.toString() + proc.stderr.toString();
-  const passes = out.split("\n").filter(l => l.startsWith("PASS")).length;
-  const fails = out.split("\n").filter(l => l.startsWith("FAIL"));
+  const lines = out.split("\n");
+  const passes = lines.filter(l => l.startsWith("PASS")).length;
+  // A failing check prints its name, then indented detail lines -- and the
+  // detail is the whole point on a machine you cannot open a shell on, so
+  // carry it up rather than just the headline.
+  const fails: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.startsWith("FAIL")) continue;
+    fails.push(line);
+    while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1]!)) fails.push(lines[++i]!);
+  }
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
   report(`${suite}  (${passes} checks, ${dt}s)`, proc.exitCode === 0,
          ...fails.slice(0, 10), ...(fails.length > 10 ? [`...and ${fails.length - 10} more`] : []),
