@@ -1,6 +1,6 @@
 {
   "name": "claude-highlight",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Colors epistemic markers in Claude Code's output, live, in the terminal",
   "keywords": [
