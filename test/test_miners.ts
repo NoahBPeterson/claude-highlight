@@ -5,19 +5,23 @@
  * counting rules (code stripping, the 5-word floor, role filtering, thinking
  * gating, config merging) and the hook's message format are pinned exactly.
  *
- * Both halves shell out to `bun run src/<miner>.ts`.
+ * Both halves shell out to src/<miner>.ts under process.execPath -- the same
+ * runtime this suite is running under -- so `node test/test_miners.ts` tests
+ * the miners on Node and `bun run test/test_miners.ts` tests them on Bun.
  *
- * Run: bun run test/test_miners.ts
+ * Run: node test/test_miners.ts
  */
-import { Database } from "bun:sqlite";
+import { spawnSync } from "node:child_process";
+import type { SpawnSyncReturns } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { B, report, finish } from "./harness";
-import type { Json } from "../src/json";
-import { environ } from "../src/util";
+import { DatabaseSync } from "node:sqlite";
+import { B, report, finish } from "./harness.ts";
+import type { Json } from "../src/json.ts";
+import { environ } from "../src/util.ts";
 
-const HERE = import.meta.dir;
+const HERE = import.meta.dirname;
 const ROOT = resolve(HERE, "..");
 const SCAN = join(ROOT, "src", "hedge_scan.ts");
 const HOOK = join(ROOT, "src", "hedge_hook.ts");
@@ -42,21 +46,33 @@ interface Proc {
   stderr: Buffer;
 }
 
+/** spawnSync hands back null for a stream a failed spawn never produced;
+ * every check here reads bytes, so an empty buffer stands in for it. */
+function proc(r: SpawnSyncReturns<Buffer>): Proc {
+  return {
+    exitCode: r.status,
+    stdout: r.stdout ?? Buffer.alloc(0),
+    stderr: r.stderr ?? Buffer.alloc(0),
+  };
+}
+
 function runScan(home: string, args: readonly string[] = [], xdg?: string): Proc {
   const env: Record<string, string> = {
     ...environ(),
     HOME: home,
     XDG_CONFIG_HOME: xdg ?? join(home, ".config"),
   };
-  return Bun.spawnSync(["bun", "run", SCAN, ...args], {
-    env, cwd: ROOT, stdout: "pipe", stderr: "pipe", timeout: 120_000,
-  });
+  // process.execPath is whichever runtime is running this suite, so the miner
+  // is always exercised on the one under test.
+  return proc(spawnSync(process.execPath, [SCAN, ...args], {
+    env, cwd: ROOT, timeout: 120_000,
+  }));
 }
 
 function runHook(payload: Buffer): Proc {
-  return Bun.spawnSync(["bun", "run", HOOK], {
-    stdin: payload, cwd: ROOT, stdout: "pipe", stderr: "pipe", timeout: 60_000,
-  });
+  return proc(spawnSync(process.execPath, [HOOK], {
+    input: payload, cwd: ROOT, timeout: 60_000,
+  }));
 }
 
 interface SessionOut {
@@ -157,17 +173,18 @@ function opencodeHome(): string {
   write(join(oc, "storage", "part", "db1.json"),     // same id as the db row: deduped
     J({ id: "db1", messageID: "m1", type: "text",
         text: "DOUBLE COUNTED probably double double double" }));
-  const con = new Database(join(oc, "opencode.db"), { create: true });
-  con.run("CREATE TABLE message (id TEXT, data TEXT)");
-  con.run("CREATE TABLE part (id TEXT, session_id TEXT, message_id TEXT, data TEXT)");
-  con.run("INSERT INTO message VALUES (?, ?)",
-    ["mdb", J({ id: "mdb", role: "assistant", sessionID: "s-db" })]);
-  con.run("INSERT INTO part VALUES (?, ?, ?, ?)",
-    ["db1", "s-db", "mdb", J({ id: "db1", type: "text",
-      text: "This probably works fine today." })]);
-  con.run("INSERT INTO part VALUES (?, ?, ?, ?)",
-    ["rdb", "s-db", "mdb", J({ id: "rdb", type: "reasoning",
-      text: "probably it is inside db reasoning" })]);
+  // node:sqlite creates the file by default; parameters go to a prepared
+  // statement rather than to a run() that takes them itself.
+  const con = new DatabaseSync(join(oc, "opencode.db"));
+  con.exec("CREATE TABLE message (id TEXT, data TEXT)");
+  con.exec("CREATE TABLE part (id TEXT, session_id TEXT, message_id TEXT, data TEXT)");
+  con.prepare("INSERT INTO message VALUES (?, ?)")
+    .run("mdb", J({ id: "mdb", role: "assistant", sessionID: "s-db" }));
+  const part = con.prepare("INSERT INTO part VALUES (?, ?, ?, ?)");
+  part.run("db1", "s-db", "mdb", J({ id: "db1", type: "text",
+    text: "This probably works fine today." }));
+  part.run("rdb", "s-db", "mdb", J({ id: "rdb", type: "reasoning",
+    text: "probably it is inside db reasoning" }));
   con.close();
   return home;
 }

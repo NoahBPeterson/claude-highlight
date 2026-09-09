@@ -35,8 +35,8 @@
  * over the latin1 view of a Buffer, where byte offsets equal char offsets, so a
  * match index slices the Buffer directly.
  */
-import type { Rule, Rewrite } from "./rules"
-import { decodeIgnore } from "./util"
+import type { Rule, Rewrite } from "./rules.ts"
+import { decodeIgnore } from "./util.ts"
 
 // --- ANSI parser states -----------------------------------------------------
 // A string union rather than an enum: the tsconfig forbids anything that is not

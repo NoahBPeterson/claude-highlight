@@ -20,7 +20,7 @@
  * port keeps that bargain rather than growing accessors the tests would only
  * have to work around.
  */
-import type { Rule } from "./rules";
+import type { Rule } from "./rules.ts";
 
 // Sticky, so it can be anchored at an offset the way Python's CSI.match(data, i) was.
 const CSI = /\x1b\[([\x30-\x3f]*)([\x20-\x2f]*)([\x40-\x7e])/y;

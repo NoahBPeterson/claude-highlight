@@ -35,29 +35,34 @@
     "./man/claude-highlight.1"
   ],
   "engines": {
-    "bun": ">=1.4.0"
+    "node": ">=22"
   },
   "os": [
     "darwin",
     "linux"
   ],
   "scripts": {
-    "build": "rm -rf dist && bun build src/claude-highlight.ts src/pty-read-worker.ts src/pty-write-worker.ts --target=bun --outdir=dist",
+    "build": "rm -rf dist && bun build src/claude-highlight.ts src/pty-read-worker.ts src/pty-write-worker.ts --target=node --packages=external --splitting --outdir=dist",
     "prepack": "bun run build",
     "typecheck": "tsc -p tsconfig.json",
-    "test:pty": "bun run test/pty-smoke.ts",
-    "test:filter": "bun run test/test_filter.ts",
-    "test:screen": "bun run test/test_screen.ts",
-    "test:integration": "bun run test/test_integration.ts",
-    "test:wrapper": "bun run test/test_wrapper.ts",
-    "test:paste": "bun run test/test_paste.ts",
-    "test:miners": "bun run test/test_miners.ts",
-    "test:all": "bun run test/run_all.ts",
-    "test:dist": "bun run build && CLAUDE_HIGHLIGHT_BIN=\"$PWD/dist/claude-highlight.js\" bun run test/run_all.ts"
+    "test:pty": "node test/pty-smoke.ts",
+    "test:filter": "node test/test_filter.ts",
+    "test:screen": "node test/test_screen.ts",
+    "test:integration": "node test/test_integration.ts",
+    "test:wrapper": "node test/test_wrapper.ts",
+    "test:paste": "node test/test_paste.ts",
+    "test:miners": "node test/test_miners.ts",
+    "test:all": "node test/run_all.ts",
+    "test:dist": "bun run build && CLAUDE_HIGHLIGHT_BIN=\"$PWD/dist/claude-highlight.js\" node test/run_all.ts",
+    "test:all:bun": "bun run test/run_all.ts",
+    "test:dist:bun": "bun run build && CLAUDE_HIGHLIGHT_BIN=\"$PWD/dist/claude-highlight.js\" bun run test/run_all.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
     "bun-types": "^1.4.1",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.15"
   }
 }

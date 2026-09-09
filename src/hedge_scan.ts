@@ -4,19 +4,19 @@
  * reports where the agent hedged, assumed, or overclaimed.
  *
  * Usage:
- *     bun run src/hedge_scan.ts                      # scan everything, print report
- *     bun run src/hedge_scan.ts --tool claude        # one source
- *     bun run src/hedge_scan.ts --thinking           # include reasoning blocks
- *     bun run src/hedge_scan.ts --json out.json      # dump raw hits
- *     bun run src/hedge_scan.ts --samples inference  # show example sentences
+ *     node src/hedge_scan.ts                      # scan everything, print report
+ *     node src/hedge_scan.ts --tool claude        # one source
+ *     node src/hedge_scan.ts --thinking           # include reasoning blocks
+ *     node src/hedge_scan.ts --json out.json      # dump raw hits
+ *     node src/hedge_scan.ts --samples inference  # show example sentences
  */
-import { Database } from "bun:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { LEXICON, WEIGHTS, userPattern } from "./hedge_lexicon";
-import { isObject, type Json } from "./json";
-import { configFile } from "./util";
+import { LEXICON, WEIGHTS, userPattern } from "./hedge_lexicon.ts";
+import { isObject, type Json } from "./json.ts";
+import { configFile } from "./util.ts";
 
 // Fold in whatever claude-highlight is configured to highlight, so a word you
 // added shows up in scans too rather than only lighting up live.
@@ -24,8 +24,8 @@ const HOME = process.env["HOME"] || homedir();
 const CONFIG = configFile("claude-highlight");
 
 /** Config patterns that compile. An invalid one is skipped, never fatal. */
-/** The value domain a sqlite row can hold, which is what bun:sqlite hands
- * back from .values(). */
+/** The value domain a sqlite row can hold, which is what node:sqlite hands
+ * back in the row objects from .all(). */
 type SqlValue = string | number | bigint | Uint8Array | null;
 
 function valid(words: readonly string[]): string[] {
@@ -187,16 +187,19 @@ function* iterOpencode(includeThinking: boolean): Generator<Rec> {
   const seenParts = new Set<string>();
   const db = join(dirname(OC_ROOT), "opencode.db");
   if (existsSync(db)) {
-    const con = new Database(db, { readonly: true });
+    const con = new DatabaseSync(db, { readOnly: true });
+    // node:sqlite returns rows keyed by column name, so the two json_extract
+    // columns are named rather than read out of a positional tuple.
     const q = `
-            SELECT p.id, p.session_id, json_extract(p.data,'$.type'),
-                   json_extract(p.data,'$.text')
+            SELECT p.id AS pid, p.session_id AS sess,
+                   json_extract(p.data,'$.type') AS kind,
+                   json_extract(p.data,'$.text') AS text
             FROM part p JOIN message m ON m.id = p.message_id
             WHERE json_extract(m.data,'$.role') = 'assistant'
               AND json_extract(p.data,'$.type') IN ('text','reasoning')
         `;
-    for (const row of con.query(q).values() as SqlValue[][]) {
-      const [pid, sess, kind, text] = row;
+    for (const row of con.prepare(q).all() as Record<string, SqlValue>[]) {
+      const pid = row["pid"], sess = row["sess"], kind = row["kind"], text = row["text"];
       seenParts.add(String(pid));
       if (kind === "reasoning" && !includeThinking) continue;
       if (typeof text === "string" && text.trim()) {
@@ -544,7 +547,8 @@ function parseArgs(argv: readonly string[]): Args {
 }
 
 function main(): void {
-  const a = parseArgs(Bun.argv.slice(2));
+  // process.argv is [runtime, script, ...args] on both runtimes, as Bun.argv was
+  const a = parseArgs(process.argv.slice(2));
   const tools = a.tool ?? Object.keys(SOURCES);
   const r = scan(tools, a.thinking);
   report(r, a.samples);

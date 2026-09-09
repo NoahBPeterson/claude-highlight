@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** claude-highlight -- run Claude Code behind a PTY that colors epistemic markers.
  *
  * Spawns the real `claude` on a pseudo-terminal and forwards bytes both ways,
@@ -19,14 +19,14 @@
  */
 import { existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { AnsiHighlighter } from "./highlight_filter";
-import { LEXICON, growablePrefixes, userPattern } from "./hedge_lexicon";
-import { ScreenModel } from "./screen_model";
-import { ptySpawn, workerUrl, type Pty } from "./pty";
-import { getWinsize, restoreStdin, saveAndSetRawStdin, sleepSync, writeAll } from "./sysffi";
-import { configFile, environ } from "./util";
-import type { Rewrite, Rule } from "./rules";
-import { isObject, parseJson, truthy, type Json, type JsonObject } from "./json";
+import { AnsiHighlighter } from "./highlight_filter.ts";
+import { LEXICON, growablePrefixes, userPattern } from "./hedge_lexicon.ts";
+import { ScreenModel } from "./screen_model.ts";
+import { ptySpawn, type Pty } from "./pty.ts";
+import { setRawStdin, sleepSync, which, winsize, writeAll } from "./sys.ts";
+import { configFile, environ } from "./util.ts";
+import type { Rewrite, Rule } from "./rules.ts";
+import { isObject, parseJson, truthy, type Json, type JsonObject } from "./json.ts";
 
 const DOC = `claude-highlight — run Claude Code behind a PTY that colors epistemic markers.
 
@@ -190,7 +190,7 @@ export function selfName(): string {
   const candidates = [...(typed === undefined ? [] : [basename(typed)]),
                       base, base.replace(/\.[jt]s$/, "")];
   for (const name of candidates) {
-    const found = Bun.which(name);
+    const found = which(name);
     if (!found) continue;
     try {
       // statSync throws if either path is gone, which is the normal case
@@ -550,11 +550,10 @@ export function parseArgs(argv: readonly string[]): Args {
   return a;
 }
 
-/** The terminal's width, for the previews that run without a child. */
+/** The terminal's width, for the previews that run without a child. The
+ * Python default was 100 rather than the 80 a pipe reports. */
 function stdoutCols(): number {
-  const sz = getWinsize(1);
-  if (sz && sz[1]) return sz[1];
-  return Number(process.env["COLUMNS"]) || 100;
+  return process.stdout.columns || Number(process.env["COLUMNS"]) || 100;
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -590,17 +589,16 @@ export async function main(argv: readonly string[]): Promise<number> {
   const recRaw = known.hlRecord === null ? null : openSync(known.hlRecord + ".raw", "w");
   const recOut = known.hlRecord === null ? null : openSync(known.hlRecord + ".out", "w");
 
-  let [rows, cols] = getWinsize(1) ?? [24, 80];
-  const pty = ptySpawn(child, known.rest, { rows, cols, env: environ() });
+  let [rows, cols] = winsize();
+  const pty = await ptySpawn(child, known.rest, { rows, cols, env: environ() });
   screen.resize(rows, cols);
 
-  // TCSANOW, not TCSAFLUSH: flushing would discard anything typed or pasted
-  // before raw mode took effect. Null when stdin is not a tty (tests, pipes).
-  const old = saveAndSetRawStdin();
+  // Null when stdin is not a tty (tests, pipes), which is the degrade-to-
+  // nothing path the Python original had.
+  const restoreStdin = setRawStdin();
 
   process.on("SIGWINCH", () => {
-    const sz = getWinsize(1);
-    [rows, cols] = sz ?? [24, 80];
+    [rows, cols] = winsize();
     pty.resize(rows, cols);         // the kernel would have, given a session
     screen.resize(rows, cols);      // a signal handler here runs between turns
   });
@@ -716,15 +714,11 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (toChild.length) pty.write(Buffer.from(toChild.join(""), "latin1"));
   };
 
-  // stdin is pumped the same way the master is: a blocking read on a thread,
-  // because Bun's own tty layer is what the pty rewrite exists to avoid.
-  const stdinReader = new Worker(workerUrl("pty-read-worker"));
-  stdinReader.addEventListener("message", event => {
-    const chunk = (event as MessageEvent<Uint8Array | null>).data;
-    if (chunk === null) stdinOpen = false;
-    else if (stdinOpen) onStdin(Buffer.from(chunk));
-  });
-  stdinReader.postMessage({ fd: 0 });
+  // Reading stdin needed a worker thread while the pty was hand-rolled; as a
+  // plain stream it is the same call on both runtimes.
+  process.stdin.on("data", (chunk: Buffer) => { if (stdinOpen) onStdin(chunk); });
+  process.stdin.on("end", () => { stdinOpen = false; });
+  process.stdin.resume();
 
   // The idle branch of the select loop: it ran when nothing was readable, so
   // a tick that carried data stands down and lets the next one do the work.
@@ -750,8 +744,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   await pty.drained;
   clearInterval(timer);
-  stdinReader.terminate();
-  if (old !== null) restoreStdin(old);
+  process.stdin.pause();
+  restoreStdin?.();
   try {
     emit(hl.drain(true));
   } catch {

@@ -7,22 +7,22 @@ Colors epistemic markers in Claude Code's output, live, in the terminal.
 
 ## Install
 
-Needs [Bun](https://bun.sh) 1.4 or newer at runtime -- the pty is built on
-`openpty(3)` through `bun:ffi`, so Node cannot run this. Unix only.
+Needs Node 22 or newer, or [Bun](https://bun.sh) 1.4 or newer. Unix only.
 
 Globally, the usual way:
 
     npm install -g claude-highlight
 
 That installs `claude-highlight` on your PATH and its man page alongside, so
-`man claude-highlight` works. The published package is just `dist/`, the man
-page and this README: 30 KB, no dependencies. From a clone instead, it is
+`man claude-highlight` works. From a clone instead, it is
 `bun run build && npm install -g .`
 
-Or from a checkout, with no install step at all -- Bun runs the TypeScript
-directly, so an edit takes effect on the next run:
+Or from a checkout, with no install step at all -- both runtimes execute the
+TypeScript directly, so an edit takes effect on the next run:
 
     ln -sf "$PWD/src/claude-highlight.ts" ~/.local/bin/claude-highlight
+
+The shebang says `node`; `bun src/claude-highlight.ts` works just as well.
 
 Either way the name on your PATH is what the resume hint uses: the wrapper
 looks for the PATH entry that resolves back to the file it is running as, and
@@ -32,12 +32,18 @@ on exit is one you can paste.
 ### Build
 
     bun run build      # dist/, what `bin` points at
-    bun run test:all   # every suite against src/
-    bun run test:dist  # rebuild, then every suite, driving dist/ where it matters
+    npm run test:all   # every suite against src/, under node
+    npm run test:dist  # rebuild, then every suite, driving dist/ where it matters
 
-The build emits three files: the bundled entry point and the two pty worker
-threads, which stay separate because they are loaded as workers by URL rather
-than imported.
+Building needs Bun (`bun build` is the bundler); running does not. The two
+`:bun` variants -- `test:all:bun`, `test:dist:bun` -- run the same suites under
+the other runtime, which is what CI does on both axes.
+
+The build emits the bundled entry point, the two pty worker threads (separate
+because they are loaded as workers by URL rather than imported), and one chunk
+per pty backend. The split is what keeps `bun:ffi` out of Node's import graph:
+it is reachable only through the `pty-bun` chunk, which nothing loads unless
+`Bun` is defined.
 
 Config lives at `~/.config/claude-highlight/config.json` (or `XDG_CONFIG_HOME`),
 so category toggles are shared across every workspace.
@@ -254,9 +260,13 @@ simply had no markers in it, which is not the same as the filter being broken.
 The suites are standalone programs, not a test framework -- each prints its
 own PASS lines and exits nonzero on any failure:
 
-    bun run test/run_all.ts       # all of them, one at a time
-    bun run test/test_filter.ts   # or any one on its own
+    node test/run_all.ts          # all of them, one at a time
+    node test/test_filter.ts      # or any one on its own
+    bun run test/run_all.ts       # the same suites on the other runtime
     bunx tsc -p tsconfig.json     # types: strict, and every check that applies to src/
+
+A suite spawns child processes with `process.execPath`, so whichever runtime
+you start it with is the one under test all the way down.
 
 ## Plugin menu
 
@@ -326,7 +336,7 @@ counted in scans -- the two cannot drift apart.
 The categories and weights are not guesses; they were checked against a real
 corpus. `hedge_results.json` is the miner's own dump, from:
 
-    bun run src/hedge_scan.ts --json hedge_results.json
+    node src/hedge_scan.ts --json hedge_results.json
 
 which walks the local Claude Code, OpenCode and Kimi transcript stores. The run
 behind the current lexicon covered **3,213,505 words over 48,557 assistant
@@ -357,13 +367,18 @@ command above -- yours will differ, and that is the point.
 
 ## Portability
 
-**Linux: written for, not yet re-verified.** The Python original passed in a
-container on Linux 6.12 aarch64 and on linux/amd64, including the 1 MB paste
-test and highlighting driven through a real Linux pty. The TypeScript port
-carries the two Linux-shaped branches it needs -- `libc.so.6` plus a
-`libutil` fallback for `openpty`, and the Linux `TIOCSWINSZ`/`TIOCGWINSZ`
-numbers -- but has only been run on macOS arm64, so treat Linux as untested
-until someone runs `bun run test/run_all.ts` there.
+**Two runtimes, two pty backends.** Under Node the pty is `node-pty`, a
+prebuilt N-API addon with no install script; under Bun it is `openpty(3)`
+through `bun:ffi`. `pty.ts` picks one at startup and everything above it is
+identical -- the same `Pty` interface, the same suites, the same bytes out.
+The Bun path is the older of the two and stays because it is the one that
+needs no native module at all.
+
+CI runs the full matrix: ubuntu-latest and macos-latest, each under both
+runtimes, against `src/` and again against `dist/`. Linux was written for
+before it was ever run; the FFI branches -- `libc.so.6` with a `libutil`
+fallback for `openpty`, and the Linux `TIOCSWINSZ`/`TIOCGWINSZ` numbers --
+worked on first execution there.
 
 The one genuinely platform-shaped call is `ioctl`, which is variadic: Apple's
 arm64 ABI passes variadic arguments on the stack, so the winsize pointer has
@@ -397,8 +412,11 @@ Config honours `XDG_CONFIG_HOME`.
 | file | what |
 |---|---|
 | `src/claude-highlight.ts` | the wrapper: entry point, hotkey, menu, config |
-| `src/pty.ts` | the pty: openpty + a spawned child, with the blocking reads and writes on worker threads |
-| `src/sysffi.ts` | the libc surface, via `bun:ffi` -- openpty, ioctl, raw mode |
+| `src/pty.ts` | the `Pty` interface, and the runtime check that picks a backend |
+| `src/pty-node.ts` | backend: `node-pty`, the prebuilt addon |
+| `src/pty-bun.ts` | backend: openpty + a spawned child, blocking reads and writes on worker threads |
+| `src/sysffi.ts` | the libc surface the Bun backend needs, via `bun:ffi` -- openpty, ioctl |
+| `src/sys.ts` | raw mode, winsize, blocking writes -- the portable half, on `node:` APIs |
 | `src/highlight_filter.ts` | the ANSI-safe stream filter |
 | `src/screen_model.ts` | shadow screen; takes back a highlight the child stranded |
 | `src/hedge_lexicon.ts` | 8 weighted marker categories, shared with the miner |

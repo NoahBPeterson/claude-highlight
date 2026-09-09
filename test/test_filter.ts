@@ -1,14 +1,14 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** Invariant tests for the stream filter. The one that matters is the last:
  * printable cell count must be identical before and after.
  *
  * Ported from test_filter.py -- same 28 checks, same order, same names. The
  * fuzz section draws from a seeded mulberry32 instead of Python's Mersenne
  * Twister, so the streams differ from the Python run but are fixed here. */
-import { AnsiHighlighter } from "../src/highlight_filter"
-import type { Rule, Rewrite } from "../src/rules"
-import { LEXICON, growablePrefixes } from "../src/hedge_lexicon"
-import { report, finish, B, visible } from "./harness"
+import { AnsiHighlighter } from "../src/highlight_filter.ts"
+import type { Rule, Rewrite } from "../src/rules.ts"
+import { LEXICON, growablePrefixes } from "../src/hedge_lexicon.ts"
+import { report, finish, B, visible } from "./harness.ts"
 
 const COLOR = B("\x1b[38;5;203m")
 const RULES: Rule[] = [{ pat: /\b(?:likely|probably|assuming)\b/gi, style: COLOR }]

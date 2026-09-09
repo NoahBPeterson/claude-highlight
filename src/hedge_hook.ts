@@ -6,11 +6,12 @@
  *
  * Wire up in settings.json:
  *     "Stop": [{"hooks": [{"type": "command",
- *               "command": "bun run /path/to/src/hedge_hook.ts"}]}]
+ *               "command": "node /path/to/src/hedge_hook.ts"}]}]
  */
-import { readFileSync } from "node:fs";
-import { LEXICON, WEIGHTS } from "./hedge_lexicon";
-import { isObject, type Json } from "./json";
+import { readFileSync, readSync } from "node:fs";
+import { LEXICON, WEIGHTS } from "./hedge_lexicon.ts";
+import { isObject, type Json } from "./json.ts";
+import { sleepSync } from "./sys.ts";
 
 // Only the categories that mean "this was inferred, not checked". The noisy
 // ones (modal/vagueness/softener) would fire on every turn.
@@ -66,10 +67,34 @@ function lastAssistantText(transcriptPath: string): string {
   return "";
 }
 
-async function main(): Promise<void> {
+/** Every byte on stdin. Replaces Bun.stdin.text(), which has no Node
+ * counterpart: the payload arrives on a pipe that may hand it over in pieces,
+ * so this reads to EOF, and an EAGAIN means the writer is behind rather than
+ * done. Bad bytes become U+FFFD, as Python's errors="replace" did. */
+function readStdin(): string {
+  const chunks: Buffer[] = [];
+  const buf = Buffer.alloc(65536);
+  for (;;) {
+    let n: number;
+    try {
+      n = readSync(0, buf, 0, buf.length, null);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EAGAIN") {
+        sleepSync(1);
+        continue;
+      }
+      break;                              // EOF, or stdin was never opened
+    }
+    if (n === 0) break;
+    chunks.push(Buffer.from(buf.subarray(0, n)));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function main(): void {
   let payload: Json;
   try {
-    payload = JSON.parse(await Bun.stdin.text());
+    payload = JSON.parse(readStdin());
   } catch {
     return;
   }
@@ -104,4 +129,4 @@ async function main(): Promise<void> {
   }));
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) main();

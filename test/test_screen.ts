@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** Tests for the shadow screen: a highlight must be takeable-back.
  *
  * The bug these cover: Claude Code repaints with a cell-level diff, so a cell it
@@ -14,11 +14,11 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { AnsiHighlighter } from "../src/highlight_filter"
-import { growablePrefixes } from "../src/hedge_lexicon"
-import { ScreenModel, cellWidth } from "../src/screen_model"
-import { report, finish, B } from "./harness"
-import type { Json } from "../src/json"
+import { AnsiHighlighter } from "../src/highlight_filter.ts"
+import { growablePrefixes } from "../src/hedge_lexicon.ts"
+import { ScreenModel, cellWidth } from "../src/screen_model.ts"
+import { report, finish, B } from "./harness.ts"
+import type { Json } from "../src/json.ts"
 
 // Every category on, in a config of our own.
 //
@@ -37,7 +37,7 @@ writeFileSync(join(TMP, "claude-highlight", "config.json"), JSON.stringify({
 process.env["XDG_CONFIG_HOME"] = TMP
 // Dynamic, so the assignment above lands before CONFIG is resolved at the
 // wrapper's module top level -- a static import would be hoisted past it.
-const ch = await import("../src/claude-highlight")
+const ch = await import("../src/claude-highlight.ts")
 
 const CFG = ch.loadConfig()
 const RULES = ch.buildRules(CFG)

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** Paste-path tests: every byte typed or pasted must reach the child.
  *
  * Kept out of test_filter.ts because each case spawns a pty and waits for the
@@ -9,21 +9,25 @@
  * this uses the shared harness, which prints the same line and keeps the
  * exit-code contract.
  */
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { report, finish, B } from "./harness";
-import { environ } from "../src/util";
+import { report, finish, B } from "./harness.ts";
+import { environ } from "../src/util.ts";
 
-const HERE = join(import.meta.dir, "..");
+const HERE = join(import.meta.dirname, "..");
 // Where the Python ran the `claude-highlight` script directly, run the port.
 // The wrapper under test: the TypeScript entry by default, or whatever
 // CLAUDE_HIGHLIGHT_BIN points at -- which is how `bun run build && ...` puts
 // these same checks through the built artifact rather than the source.
-const WRAPPER = process.env["CLAUDE_HIGHLIGHT_BIN"]
-  ? [process.env["CLAUDE_HIGHLIGHT_BIN"]]
-  : ["bun", "run", join(HERE, "src", "claude-highlight.ts")];
+//
+// The source is handed to process.execPath rather than a named runtime, so
+// the wrapper is exercised under whichever of Bun or Node runs this suite.
+const BIN = process.env["CLAUDE_HIGHLIGHT_BIN"];
+const WRAPPER: readonly string[] =
+  BIN ? [BIN] : [process.execPath, join(HERE, "src", "claude-highlight.ts")];
 
 /** The sink stays in Python, exactly as the wrapper's own test child does: it
  * puts the pty *slave* into raw mode with termios and then blocks in
@@ -84,11 +88,10 @@ async function run(payload: Buffer, tmp: string): Promise<[string, string]> {
   // JS-side ReadableStream bridge would not.
   const cmd = `{ sleep 1.5; cat ${shq(pay)}; } | `
             + `${WRAPPER.map(shq).join(" ")} ${shq(sinkPy)}`;
-  const proc = Bun.spawn(["/bin/sh", "-c", cmd], {
-    stdout: "ignore", stderr: "ignore", stdin: "ignore", env, cwd: HERE,
-    timeout: 120_000,
+  const proc = spawn("/bin/sh", ["-c", cmd], {
+    stdio: "ignore", env, cwd: HERE, timeout: 120_000,
   });
-  await proc.exited;
+  await new Promise<void>(done => proc.once("exit", () => done()));
   if (!existsSync(out)) return ["0", ""];
   const [n, digest] = readFileSync(out, "utf8").split(/\s+/);
   return [n ?? "0", digest ?? ""];

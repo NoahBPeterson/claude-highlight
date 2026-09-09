@@ -1,8 +1,8 @@
-// Smoke test for src/pty.ts. Run: bun test/pty-smoke.ts
+// Smoke test for src/pty.ts. Run: node test/pty-smoke.ts (or bun, for the other backend)
 import { createHash } from "node:crypto";
-import { ptySpawn } from "../src/pty";
-import { environ } from "../src/util";
-import type { Detail } from "./harness";
+import { ptySpawn } from "../src/pty.ts";
+import { environ } from "../src/util.ts";
+import type { Detail } from "./harness.ts";
 
 let passed = 0, failed = 0;
 function report(name: string, ok: boolean, detail?: Detail): void {
@@ -19,7 +19,7 @@ const ENV = environ();
   // escapes are a bash/GNU extension its printf does not implement -- so the
   // hex form emitted the literal text there and this check failed on CI while
   // passing on macOS, where /bin/sh is bash.
-  const p = ptySpawn("/bin/sh", ["-c", 'printf "A\\377\\376\\033[31mZ"; exit 3'],
+  const p = await ptySpawn("/bin/sh", ["-c", 'printf "A\\377\\376\\033[31mZ"; exit 3'],
     { rows: 24, cols: 80, env: ENV });
   let got = Buffer.alloc(0);
   p.onData(c => { got = Buffer.concat([got, c]); });
@@ -32,7 +32,7 @@ const ENV = environ();
 
 // 2. signal death -> shell convention 128+N
 {
-  const p = ptySpawn("/bin/sleep", ["30"], { rows: 24, cols: 80, env: ENV });
+  const p = await ptySpawn("/bin/sleep", ["30"], { rows: 24, cols: 80, env: ENV });
   await sleep(150);
   p.kill(9);                    // SIGKILL
   report("SIGKILL -> 137", await p.exited === 137, await p.exited);
@@ -41,7 +41,7 @@ const ENV = environ();
 
 // 3. winsize: stty reports what openpty/ioctl set
 {
-  const p = ptySpawn("/bin/sh", ["-c", "stty size; sleep 0.3"], { rows: 24, cols: 80, env: ENV });
+  const p = await ptySpawn("/bin/sh", ["-c", "stty size; sleep 0.3"], { rows: 24, cols: 80, env: ENV });
   let got = "";
   p.onData(c => { got += c.toString("latin1"); });
   await p.drained;
@@ -49,7 +49,7 @@ const ENV = environ();
   p.destroy();
 }
 {
-  const p = ptySpawn("/bin/sh", ["-c", "sleep 0.15; stty size"], { rows: 24, cols: 80, env: ENV });
+  const p = await ptySpawn("/bin/sh", ["-c", "sleep 0.15; stty size"], { rows: 24, cols: 80, env: ENV });
   p.resize(30, 100);
   let got = "";
   p.onData(c => { got += c.toString("latin1"); });
@@ -64,7 +64,7 @@ const ENV = environ();
     process.on("SIGWINCH", () => { console.log("WINCH"); process.exit(0); });
     setInterval(() => {}, 1000);
   `;
-  const p = ptySpawn(process.execPath, ["-e", child], { rows: 24, cols: 80, env: ENV });
+  const p = await ptySpawn(process.execPath, ["-e", child], { rows: 24, cols: 80, env: ENV });
   let got = "";
   p.onData(c => { got += c.toString("latin1"); });
   await sleep(300);
@@ -80,7 +80,7 @@ const ENV = environ();
     Array.from({ length: 1 << 20 }, (_, i) => 65 + (i % 26)));
   // raw mode on the slave: a cooked line discipline caps a line at MAX_CANON
   // (1 KB) and would wedge on a payload with no newlines in it.
-  const p = ptySpawn("/bin/sh", ["-c", "stty raw -echo; exec cat"],
+  const p = await ptySpawn("/bin/sh", ["-c", "stty raw -echo; exec cat"],
     { rows: 60, cols: 200, env: ENV });
   let got = Buffer.alloc(0);
   p.onData(c => { got = Buffer.concat([got, c]); });

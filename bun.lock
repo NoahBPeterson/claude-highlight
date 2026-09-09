@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "claude-highlight",
+      "dependencies": {
+        "@lydell/node-pty": "^1.2.0-beta.15",
+      },
       "devDependencies": {
         "@types/bun": "^1.4.0",
         "bun-types": "^1.4.1",
@@ -12,6 +15,20 @@
     },
   },
   "packages": {
+    "@lydell/node-pty": ["@lydell/node-pty@1.2.0-beta.15", "", { "optionalDependencies": { "@lydell/node-pty-darwin-arm64": "1.2.0-beta.15", "@lydell/node-pty-darwin-x64": "1.2.0-beta.15", "@lydell/node-pty-linux-arm64": "1.2.0-beta.15", "@lydell/node-pty-linux-x64": "1.2.0-beta.15", "@lydell/node-pty-win32-arm64": "1.2.0-beta.15", "@lydell/node-pty-win32-x64": "1.2.0-beta.15" } }, "sha512-Br8wBxzbxFwdWgk9uQ+rdzE0xfoxOK4QuGH54swhRwc5IxP6H9Y1/bcyazRGvNUs6XkB5qNVkezuKSRxUwZe7A=="],
+
+    "@lydell/node-pty-darwin-arm64": ["@lydell/node-pty-darwin-arm64@1.2.0-beta.15", "", { "os": "darwin", "cpu": "arm64" }, "sha512-6TSBbzdcLiNTHl1mTuzflqXrkmcC36USVGvERoDgvHk2ItEDaMaFZuAJ1CqPmwYj0DyhCS16TVS8OGK9xZnjyQ=="],
+
+    "@lydell/node-pty-darwin-x64": ["@lydell/node-pty-darwin-x64@1.2.0-beta.15", "", { "os": "darwin", "cpu": "x64" }, "sha512-yDT2oqPqYMBScyuk1U9Rg5VKcrbMOD9o9jWYYamDADA3NSbUISroPChrqYRQ74Y7BQtNH4gqYAiWOZRi5uQZ0Q=="],
+
+    "@lydell/node-pty-linux-arm64": ["@lydell/node-pty-linux-arm64@1.2.0-beta.15", "", { "os": "linux", "cpu": "arm64" }, "sha512-wkbNF7dYAmtJv+o2+iztVlNwnUB4B0uX0wh/UD+mwMcmE2gNMnW9GChXO7fEE5XJokD0vB5idiHpGegaN+G/sg=="],
+
+    "@lydell/node-pty-linux-x64": ["@lydell/node-pty-linux-x64@1.2.0-beta.15", "", { "os": "linux", "cpu": "x64" }, "sha512-+U/5AVvHT6W+8OCYcnJgN0Qgc0ycO3TfD6aaFJHK+WHij797f8gsi5dV1HEO9l6YQmWCD+VL5gaLDhx3mxHwCA=="],
+
+    "@lydell/node-pty-win32-arm64": ["@lydell/node-pty-win32-arm64@1.2.0-beta.15", "", { "os": "win32", "cpu": "arm64" }, "sha512-pyAk91w7wnnKrD4mrHXtIXRfmzSWV5bEzvRhurXcMCtCc2TJ424ciUskIgWMhAPP6y3KyUnqElj+U6kY3iOt0A=="],
+
+    "@lydell/node-pty-win32-x64": ["@lydell/node-pty-win32-x64@1.2.0-beta.15", "", { "os": "win32", "cpu": "x64" }, "sha512-2f8twEmDVxZ7drchAXjtevpmSPhFok0avAnzXro4t5gmz0xsPNKkoZvymwtuIS3xo7PzQqZOPQ/YzwEMb7oIzQ=="],
+
     "@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
 
     "@types/node": ["@types/node@26.5.0", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-dVSGpriSoCgz8WnDNTuSSuSv1PC/ALXihO4ulRZt7Md8k9mlbdin3lGOcDE8SnWOgf513ByWlXd7BK4azmyg/A=="],

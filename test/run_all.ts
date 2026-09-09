@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** Every suite, in one run. Each is a standalone program that prints its own
  * PASS lines and exits nonzero on any failure, so this only has to sequence
  * them and add up the verdicts -- the same contract the Python suites had.
@@ -7,7 +7,8 @@
  * processes and wait on real timings, and running them alongside each other
  * makes those waits flaky rather than fast.
  */
-import { report, finish } from "./harness";
+import { spawnSync } from "node:child_process";
+import { report, finish } from "./harness.ts";
 
 const SUITES = [
   "test/pty-smoke.ts",
@@ -23,10 +24,14 @@ const root = new URL("..", import.meta.url).pathname;
 
 for (const suite of SUITES) {
   const t0 = Date.now();
-  const proc = Bun.spawnSync(["bun", "run", suite], {
+  // process.execPath, not a hardcoded runtime: a suite is exercised under
+  // whichever of Bun or Node is running this file, so one command covers both.
+  const proc = spawnSync(process.execPath, [suite], {
     cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
+    stdio: ["ignore", "pipe", "pipe"],
+    // Node caps a captured stream at 1 MB and then reports ENOBUFS with the
+    // output truncated; a failing suite's detail is the whole point here.
+    maxBuffer: 64 * 1024 * 1024,
   });
   const out = proc.stdout.toString() + proc.stderr.toString();
   const lines = out.split("\n");
@@ -42,9 +47,11 @@ for (const suite of SUITES) {
     while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1]!)) fails.push(lines[++i]!);
   }
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
-  report(`${suite}  (${passes} checks, ${dt}s)`, proc.exitCode === 0,
+  // status is null for a suite killed by a signal, which is not a pass either.
+  const ok = proc.status === 0;
+  report(`${suite}  (${passes} checks, ${dt}s)`, ok,
          ...fails.slice(0, 10), ...(fails.length > 10 ? [`...and ${fails.length - 10} more`] : []),
-         ...(proc.exitCode === 0 || fails.length ? [] : [out.slice(-2000)]));
+         ...(ok || fails.length ? [] : [out.slice(-2000)]));
 }
 
 finish();

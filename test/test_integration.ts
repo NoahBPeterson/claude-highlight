@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** Integration tests: the whole pipeline, wired the way claude-highlight wires it.
  *
  * Ported from test_integration.py -- same 187 checks, same order, same names.
@@ -30,19 +30,19 @@
 import { existsSync, mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { AnsiHighlighter } from "../src/highlight_filter"
-import * as HL from "../src/hedge_lexicon"
-import { ScreenModel, MAX_FIX, cellWidth } from "../src/screen_model"
-import type { Rewrite, Rule } from "../src/rules"
-import type { CategoryCfg, Config } from "../src/claude-highlight"
-import type { Json, JsonObject } from "../src/json"
-import { report, finish, B, visible } from "./harness"
+import { AnsiHighlighter } from "../src/highlight_filter.ts"
+import * as HL from "../src/hedge_lexicon.ts"
+import { ScreenModel, MAX_FIX, cellWidth } from "../src/screen_model.ts"
+import type { Rewrite, Rule } from "../src/rules.ts"
+import type { CategoryCfg, Config } from "../src/claude-highlight.ts"
+import type { Json, JsonObject } from "../src/json.ts"
+import { report, finish, B, visible } from "./harness.ts"
 
 const TMP = mkdtempSync(join(tmpdir(), "hl-int-"))
 process.env["XDG_CONFIG_HOME"] = TMP       // must precede loading the wrapper
 // Dynamic, so the assignment above lands before CONFIG is resolved at the
 // wrapper's module top level -- a static import would be hoisted past it.
-const ch = await import("../src/claude-highlight")
+const ch = await import("../src/claude-highlight.ts")
 
 const CFG_PATH = join(TMP, "claude-highlight", "config.json")
 const ORDER = ch.ORDER

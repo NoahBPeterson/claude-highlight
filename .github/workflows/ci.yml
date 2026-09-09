@@ -9,13 +9,17 @@ on:
 jobs:
   test:
     # macOS is arm64, which is the one platform where ioctl's variadic
-    # arguments go on the stack; Linux is the platform this has never actually
-    # run on, and the reason the matrix exists.
+    # arguments go on the stack -- the Bun backend's sharpest edge, and half of
+    # why the matrix has two axes rather than one.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        # Both pty backends get exercised: node-pty under Node, bun:ffi under
+        # Bun. Neither library covers both runtimes, which is why there are two.
+        runtime: [node, bun]
     runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} / ${{ matrix.runtime }}
     timeout-minutes: 15
 
     steps:
@@ -24,6 +28,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # Node runs the TypeScript directly (type stripping, on by default since
+      # 23.6), so there is no build step in front of the source suites.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       # test_wrapper and test_paste drive the wrapper against a stand-in child
       # written in Python -- deliberately another language, since the wrapper
@@ -38,7 +48,9 @@ jobs:
         run: bun run typecheck
 
       - name: Suites, against the sources
-        run: bun run test:all
+        run: ${{ matrix.runtime }} test/run_all.ts
 
       - name: Suites, against the built artifact
-        run: bun run test:dist
+        run: |
+          bun run build
+          CLAUDE_HIGHLIGHT_BIN="$PWD/dist/claude-highlight.js" ${{ matrix.runtime }} test/run_all.ts

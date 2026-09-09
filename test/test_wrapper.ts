@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /** Black-box tests: the real wrapper, on a real pty, against a stand-in child.
  *
  * CLAUDE_HIGHLIGHT_CMD exists precisely so the wrapper can be exercised without
@@ -21,21 +21,26 @@
  *   a signalled child surfaces as 128+signal, not Python's 247 (see the
  *   "child death by signal" case).
  */
+import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
-import { report, finish, B } from "./harness";
-import { isObject, parseJson, type Json } from "../src/json";
-import { environ } from "../src/util";
+import type { Readable, Writable } from "node:stream";
+import { report, finish, B } from "./harness.ts";
+import { isObject, parseJson, type Json } from "../src/json.ts";
+import { environ } from "../src/util.ts";
 
-const HERE = join(import.meta.dir, "..");
+const HERE = join(import.meta.dirname, "..");
 // Where the Python ran the `claude-highlight` script directly, run the port.
 // The wrapper under test: the TypeScript entry by default, or whatever
 // CLAUDE_HIGHLIGHT_BIN points at -- which is how `bun run build && ...` puts
 // these same checks through the built artifact rather than the source.
-const WRAPPER = process.env["CLAUDE_HIGHLIGHT_BIN"]
-  ? [process.env["CLAUDE_HIGHLIGHT_BIN"]]
-  : ["bun", "run", join(HERE, "src", "claude-highlight.ts")];
+//
+// The source is handed to process.execPath rather than a named runtime, so
+// the wrapper is exercised under whichever of Bun or Node runs this suite.
+const BIN = process.env["CLAUDE_HIGHLIGHT_BIN"];
+const WRAPPER: readonly [string, ...string[]] =
+  BIN ? [BIN] : [process.execPath, join(HERE, "src", "claude-highlight.ts")];
 const WORKDIR = mkdtempSync(join(tmpdir(), "hl-wrap-"));
 const CHILD = join(WORKDIR, "child.py");
 const F9 = B("\x1b[20~");
@@ -174,14 +179,8 @@ const PYTHON = "python3";
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
-async function pump(stream: ReadableStream<Uint8Array>,
-                    sink: (b: Buffer) => void): Promise<void> {
-  const reader = stream.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    if (value) sink(Buffer.from(value));
-  }
+async function pump(stream: Readable, sink: (b: Buffer) => void): Promise<void> {
+  for await (const chunk of stream) sink(Buffer.from(chunk as Uint8Array));
 }
 
 interface SessionOpts {
@@ -194,7 +193,7 @@ interface SessionOpts {
 /** One claude-highlight process around the child harness. */
 class Session {
   readonly xdg: string;
-  readonly proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+  readonly proc: ChildProcessByStdio<Writable, Readable, Readable>;
   err: Buffer = Buffer.alloc(0);
   private parts: Buffer[] = [];
   private cached: Buffer | null = null;
@@ -204,6 +203,10 @@ class Session {
    * same guard without the race. */
   private live = true;
   private readonly pumps: Promise<void>;
+  /** Bun's Subprocess.exited resolved to a number even for a signalled child;
+   * node:child_process splits that into a null code plus a signal name, so
+   * fold it back into the same 128+signal shell convention. */
+  private readonly exited: Promise<number>;
 
   constructor(mode: string, opts: SessionOpts = {}) {
     this.xdg = join(WORKDIR, `xdg-${mode}-${process.hrtime.bigint()}`);
@@ -214,12 +217,20 @@ class Session {
       COLUMNS: "100",
       ...(opts.envExtra ?? {}),
     };
-    const full = [...WRAPPER];
-    if (opts.record !== undefined) full.push(`--hl-record=${opts.record}`);
-    full.push(...(opts.args ?? []), CHILD, mode,
+    const argv = WRAPPER.slice(1);
+    if (opts.record !== undefined) argv.push(`--hl-record=${opts.record}`);
+    argv.push(...(opts.args ?? []), CHILD, mode,
               ...(opts.childArgs ?? []).map(String));
-    this.proc = Bun.spawn(full, {
-      stdin: "pipe", stdout: "pipe", stderr: "pipe", env, cwd: HERE,
+    this.proc = spawn(WRAPPER[0], argv, {
+      stdio: ["pipe", "pipe", "pipe"], env, cwd: HERE,
+    });
+    // A child that has already died turns the next write into an EPIPE error
+    // event, and an unhandled one on a stream takes this suite down with it.
+    // The "kill" and "exitcode" cases reach finish() in exactly that state.
+    this.proc.stdin.on("error", () => { /* the wrapper is gone; nothing to say */ });
+    this.exited = new Promise<number>(done => {
+      this.proc.once("exit", (code, signal) =>
+        done(code ?? 128 + (signal === null ? 0 : constants.signals[signal])));
     });
     this.pumps = Promise.all([
       pump(this.proc.stdout, b => { this.parts.push(b); this.cached = null; }),
@@ -235,9 +246,20 @@ class Session {
     return this.cached;
   }
 
+  /** Returns once the bytes are with the OS, which is what Bun's stdin.flush()
+   * gave: the flood case writes past the pipe buffer, and a send that returned
+   * early would let the next one queue ahead of an unfinished write. */
   async send(data: Buffer): Promise<void> {
-    this.proc.stdin.write(data);
-    await this.proc.stdin.flush();
+    if (this.proc.stdin.write(data)) return;
+    await new Promise<void>(done => {
+      const go = (): void => {
+        this.proc.stdin.off("drain", go);
+        this.proc.stdin.off("error", go);
+        done();
+      };
+      this.proc.stdin.on("drain", go);
+      this.proc.stdin.on("error", go);   // a dead pipe never drains
+    });
   }
 
   async waitFor(pat: Buffer, timeout = 10): Promise<boolean> {
@@ -265,12 +287,12 @@ class Session {
   async finish(timeout = 15): Promise<number> {
     try { this.proc.stdin.end(); } catch { /* already closed */ }
     let code = await Promise.race([
-      this.proc.exited,
+      this.exited,
       sleep(timeout * 1000).then(() => null),
     ]);
     if (code === null) {
       this.proc.kill(9);
-      code = await this.proc.exited;
+      code = await this.exited;
     }
     await this.pumps;      // Python's blocking stderr.read() to EOF
     this.err = Buffer.concat(this.errParts);
@@ -314,11 +336,12 @@ function runFlag(args: readonly string[], envExtra?: Record<string, string>,
     mkdirSync(join(xdg, "claude-highlight"), { recursive: true });
     writeFileSync(join(xdg, "claude-highlight", "config.json"), xdgConfig);
   }
-  const p = Bun.spawnSync([...WRAPPER, ...args], {
-    stdin: "ignore", stdout: "pipe", stderr: "pipe",
+  const p = spawnSync(WRAPPER[0], [...WRAPPER.slice(1), ...args], {
+    stdio: ["ignore", "pipe", "pipe"],
     env, cwd: HERE, timeout: 60_000,
   });
-  return { code: p.exitCode, stdout: Buffer.from(p.stdout), stderr: Buffer.from(p.stderr) };
+  // status is null when the timeout killed it, which no check should read as 0.
+  return { code: p.status ?? -1, stdout: p.stdout, stderr: p.stderr };
 }
 
 let p = runFlag(["--hl-help"]);
@@ -378,8 +401,8 @@ code = await s.finish();
 // sys.exit(-9) lands as 256-9 on POSIX; a wrapper that re-raises the signal
 // instead would surface as -9. Both readings of "the child died" are fine.
 // The port adds a third: src/pty.ts reports a signalled child in shell
-// convention (128+signal), which is what Bun's Subprocess.exited gives and
-// the only encoding reachable from process.exit(), since that masks to 0-255.
+// convention (128+signal), the only encoding reachable from process.exit(),
+// since that masks to 0-255.
 report("lifecycle: child death by signal propagates",
        [-9, 247, 137].includes(code), code);
 
@@ -607,8 +630,10 @@ report("record: paint present in .out, absent in .raw",
 s = new Session("garbage");
 code = await s.finish();
 // The original looked for a Python "Traceback"; the wrapper is TypeScript now,
-// so Bun's own uncaught-error banner counts as a crash too.
-const crashed = /Traceback|^error:/m.test(s.err.toString("latin1"));
+// so an uncaught-error banner counts as a crash too -- and it has to be
+// recognised under both runtimes, since Bun prints "error:" where Node prints
+// the error class.
+const crashed = /Traceback|^error:|^[A-Za-z]*Error:/m.test(s.err.toString("latin1"));
 report("hostile: 120 KB of random bytes through the wrapper, no crash",
        code === 0 && await s.waitFor(B("GARBAGE DONE")) && !crashed,
        code, s.err.subarray(-200));
