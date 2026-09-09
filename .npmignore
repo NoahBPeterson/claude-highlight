@@ -15,6 +15,10 @@ test/
 tsconfig.json
 bun.lock
 
+# CI definitions: they describe how this is built and released, which is a
+# repository concern -- they were shipping in the tarball until now.
+.github/
+
 # Working notes, transcripts and scan output from building this.
 *.md
 !README.md
