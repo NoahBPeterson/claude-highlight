@@ -58,18 +58,30 @@ const ENV = environ();
   p.destroy();
 }
 
-// 4. SIGWINCH delivered explicitly on resize
+// 4. SIGWINCH delivered explicitly on resize. Both edges are events, not
+// waits: the child prints READY only after its handler is installed, so the
+// resize cannot race the install, and p.drained (as in the byte-fidelity test)
+// lets the handler's final write out of the pty before we read it -- exit can
+// otherwise beat that write, which is the empty-capture flake this replaces.
 {
   const child = `
     process.on("SIGWINCH", () => { console.log("WINCH"); process.exit(0); });
+    console.log("READY");
     setInterval(() => {}, 1000);
   `;
   const p = await ptySpawn(process.execPath, ["-e", child], { rows: 24, cols: 80, env: ENV });
   let got = "";
-  p.onData(c => { got += c.toString("latin1"); });
-  await sleep(300);
+  let notify: (() => void) | null = null;
+  p.onData(c => { got += c.toString("latin1"); notify?.(); });
+  const until = (needle: string): Promise<void> =>
+    new Promise(res => {
+      notify = () => { if (got.includes(needle)) { notify = null; res(); } };
+      notify();                  // resolve at once if it already arrived
+    });
+  await until("READY");          // the handler is installed; the resize cannot beat it
   p.resize(30, 100);
-  const code = await p.exited;
+  const code = await p.exited;   // the handler runs, prints WINCH, and exits 0
+  await p.drained;               // ...and that write reaches us before we assert
   report("SIGWINCH delivered on resize", code === 0 && got.includes("WINCH"), { code, got });
   p.destroy();
 }
