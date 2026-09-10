@@ -645,6 +645,57 @@ m.feed(B("\x1b\x1b[1;1H"))          // ESC ESC: both consumed, rest is text (pin
 report("hostile: ESC ESC consumed as two bytes, remainder printed (pinned)",
   rowtext(m, 0).startsWith("[1;1H"), rowtext(m, 0))
 
+// the add-path: the frame reconciler paints a match the streaming pass never
+// coloured. Claude Code redraws a scrolled screen cell by cell, so a word can
+// land split across an absolute cursor jump the stream filter cannot bridge --
+// it must still come out painted, or it flickers as the scroll offset shifts.
+m = new ScreenModel(6, 40, OP_PAL)
+out = m.reconcile(Buffer.concat([B("\x1b[?1049h"),
+  frame(B("\x1b[1;1Hthe tests mostly pass"))]), RULES_OP, true)
+report("add: a plain word the child wrote is painted at the frame end",
+  same(ours(m, 0), range(10, 16))
+  && m.fg[0]!.slice(10, 16).every(v => v === "38;5;214")
+  && out.includes(B("\x1b[1;11H\x1b[38;5;214mmostly")), [ours(m, 0), out])
+
+m = new ScreenModel(6, 40, OP_PAL)
+out = m.reconcile(Buffer.concat([B("\x1b[?1049h"),
+  frame(B("\x1b[1;1Hthe tests mos\x1b[1;14Htly pass"))]), RULES_OP, true)
+report("add: a word split across a cursor jump is still painted",
+  same(ours(m, 0), range(10, 16)) && out.includes(B("\x1b[38;5;214mmostly")),
+  [ours(m, 0), out])
+
+m = new ScreenModel(6, 40, OP_PAL)
+out = m.reconcile(Buffer.concat([B("\x1b[?1049h"),
+  frame(B("\x1b[2;1H\x1b[48;5;236mthe tests mostly pass\x1b[49m"))]), RULES_OP, true)
+report("add: a non-default background blocks the add-path (user message)",
+  !anyOurs(m, 1) && !out.includes(B("\x1b[38;5;214m")), out)
+
+// composer sweep: a paint can reach the input box out of step with the frame
+// that redrew it -- the highlighter holds a partial word and flushes it a tick
+// late, after that row's dirty flag was cleared -- so a dirty-only correction
+// leaves the user's own prompt coloured. Regression from a recorded session
+// where "clearly" typed into the box stayed painted for 21 frames.
+{
+  const mm = new ScreenModel(8, 40, OP_PAL)
+  const rule = Buffer.from("─".repeat(40), "utf8")       // box-drawing is multi-byte UTF-8
+  mm.feed(B("\x1b[?1049h"))
+  mm.feed(Buffer.concat([
+    B("\x1b[5;1H"), rule,                                 // input box top rule
+    B("\x1b[6;1H> \x1b[38;5;214mmostly\x1b[39m pass"),    // prompt, hedge word painted
+    B("\x1b[7;1H"), rule,                                 // input box bottom rule
+    B("\x1b[8;1Hstatus line here"),
+  ]))
+  report("composer: the input row is detected as off-limits",
+    mm.composerRows().includes(5), mm.composerRows())
+  report("composer: the hedge word landed painted in the box",
+    same(ours(mm, 5), range(2, 8)), ours(mm, 5))
+  mm.dirty = new Set()                                    // the late flush's frame already passed
+  const corr = mm.corrections(RULES_OP, true)
+  report("composer: an unconditional sweep strips paint even when the row is clean",
+    !anyOurs(mm, 5) && corr.includes(B("\x1b[6;")) && corr.includes(B("\x1b[39m")),
+    [ours(mm, 5), corr])
+}
+
 // == 5. the input box =========================================================
 
 const RULE = "─".repeat(60)
