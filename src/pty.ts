@@ -2,7 +2,7 @@
  *
  * There are two backends because neither library covers both runtimes:
  * node-pty does not work under Bun (its read pump is a node:tty ReadStream on
- * the raw master fd and never delivers a byte -- see ISSUE-node-pty-bun.md),
+ * the raw master fd and never delivers a byte -- see oven-sh/bun#25822),
  * and bun:ffi does not exist under Node. Everything else the wrapper needs
  * from the terminal -- raw mode, window size, writes, a real sleep -- is the
  * same call on both and lives in sys.ts.

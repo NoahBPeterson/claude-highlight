@@ -5,7 +5,7 @@
  * one here, since node-pty is what does not work under Bun.
  *
  * node-pty is unusable under Bun (its read pump is a node:tty ReadStream on
- * the raw master fd, which never delivers -- see ISSUE-node-pty-bun.md), so
+ * the raw master fd, which never delivers -- see oven-sh/bun#25822), so
  * this owns the plumbing the way the Python original did:
  *
  *   openpty(3) via bun:ffi gets a master/slave pair with the right winsize;

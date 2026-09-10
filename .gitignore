@@ -27,3 +27,7 @@ __pycache__/
 # Session transcripts and scratch notes from the port itself.
 session-*.md
 *.txt
+
+# Drafts of upstream bug reports and comments written while building this.
+COMMENT-*.md
+ISSUE-*.md
