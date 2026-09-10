@@ -106,13 +106,18 @@ export class ScreenModel {
   cols!: number;
   chars!: (string | null)[][];
   fg!: (string | null)[][];
+  // Tracked only to tell prose apart from a user message, which is default
+  // foreground on a grey background. The wrapper never sets a background, so a
+  // non-default one here always belongs to the child and is off-limits.
+  bg!: (string | null)[][];
   ours!: boolean[][];
   rule!: (boolean | null)[];
   x!: number;
   y!: number;
   curFg!: string | null;
+  curBg!: string | null;
   curOurs!: boolean;
-  saved!: [number, number, string | null];
+  saved!: [number, number, string | null, string | null];
   top!: number;
   bot!: number;
   alt!: boolean;
@@ -139,6 +144,7 @@ export class ScreenModel {
   invalidate(): void {
     this.chars = Array.from({ length: this.rows }, () => new Array<string | null>(this.cols).fill(null));
     this.fg = Array.from({ length: this.rows }, () => new Array<string | null>(this.cols).fill(null));
+    this.bg = Array.from({ length: this.rows }, () => new Array<string | null>(this.cols).fill(null));
     this.ours = Array.from({ length: this.rows }, () => new Array<boolean>(this.cols).fill(false));
     // "is this row one of the box's rules?", worked out lazily and dropped
     // whenever the row changes. Rescanning the bottom 32 rows every frame
@@ -146,8 +152,9 @@ export class ScreenModel {
     this.rule = new Array<boolean | null>(this.rows).fill(null);
     this.x = this.y = 0;
     this.curFg = null;
+    this.curBg = null;
     this.curOurs = false;
-    this.saved = [0, 0, null];
+    this.saved = [0, 0, null, null];
     this.top = 0;
     this.bot = this.rows - 1;
     this.alt = false;
@@ -158,8 +165,9 @@ export class ScreenModel {
   }
 
   // -- writing -------------------------------------------------------------
-  blankRow(): [(string | null)[], (string | null)[], boolean[]] {
+  blankRow(): [(string | null)[], (string | null)[], (string | null)[], boolean[]] {
     return [new Array<string | null>(this.cols).fill(null),
+            new Array<string | null>(this.cols).fill(null),
             new Array<string | null>(this.cols).fill(null),
             new Array<boolean>(this.cols).fill(false)];
   }
@@ -167,6 +175,7 @@ export class ScreenModel {
   set(x: number, ch: string): void {
     this.chars[this.y]![x] = ch;
     this.fg[this.y]![x] = this.curFg;
+    this.bg[this.y]![x] = this.curBg;
     this.ours[this.y]![x] = this.curOurs;
     this.dirty.add(this.y);
     this.rule[this.y] = null;
@@ -199,14 +208,16 @@ export class ScreenModel {
 
   scroll(n: number, up = true): void {
     for (let k = 0; k < Math.max(n, 1); k++) {
-      const [c, f, o] = this.blankRow();
+      const [c, f, bg, o] = this.blankRow();
       if (up) {
         this.chars.splice(this.top, 1); this.chars.splice(this.bot, 0, c);
         this.fg.splice(this.top, 1); this.fg.splice(this.bot, 0, f);
+        this.bg.splice(this.top, 1); this.bg.splice(this.bot, 0, bg);
         this.ours.splice(this.top, 1); this.ours.splice(this.bot, 0, o);
       } else {
         this.chars.splice(this.bot, 1); this.chars.splice(this.top, 0, c);
         this.fg.splice(this.bot, 1); this.fg.splice(this.top, 0, f);
+        this.bg.splice(this.bot, 1); this.bg.splice(this.top, 0, bg);
         this.ours.splice(this.bot, 1); this.ours.splice(this.top, 0, o);
       }
     }
@@ -221,13 +232,23 @@ export class ScreenModel {
     while (i < toks.length) {
       const t = toks[i] || "0";
       const n = /^[0-9]+$/.test(t) ? parseInt(t, 10) : -1;
-      if (n === 0 || n === 39) {
+      if (n === 0) {
         this.curFg = null;
+        this.curBg = null;
+      } else if (n === 39) {
+        this.curFg = null;
+      } else if (n === 49) {
+        this.curBg = null;
       } else if ((n >= 30 && n <= 37) || (n >= 90 && n <= 97)) {
         this.curFg = t;
+      } else if ((n >= 40 && n <= 47) || (n >= 100 && n <= 107)) {
+        this.curBg = t;
       } else if (n === 38) {
         if (toks[i + 1] === "5") { this.curFg = toks.slice(i, i + 3).join(";"); i += 2; }
         else if (toks[i + 1] === "2") { this.curFg = toks.slice(i, i + 5).join(";"); i += 4; }
+      } else if (n === 48) {
+        if (toks[i + 1] === "5") { this.curBg = toks.slice(i, i + 3).join(";"); i += 2; }
+        else if (toks[i + 1] === "2") { this.curBg = toks.slice(i, i + 5).join(";"); i += 4; }
       }
       i += 1;
     }
@@ -238,6 +259,7 @@ export class ScreenModel {
     for (const x of cells) {
       this.chars[this.y]![x] = " ";
       this.fg[this.y]![x] = null;
+      this.bg[this.y]![x] = null;
       this.ours[this.y]![x] = false;
     }
     this.dirty.add(this.y);
@@ -290,26 +312,29 @@ export class ScreenModel {
     else if (fin === "L" || fin === "M") {
       const n = Math.max(a, 1);
       for (let k = 0; k < n; k++) {
-        const [c, f, o] = this.blankRow();
+        const [c, f, bg, o] = this.blankRow();
         const at = fin === "L" ? this.y : this.bot;
         const from = fin === "L" ? this.bot : this.y;
         this.chars.splice(from, 1); this.chars.splice(at, 0, c);
         this.fg.splice(from, 1); this.fg.splice(at, 0, f);
+        this.bg.splice(from, 1); this.bg.splice(at, 0, bg);
         this.ours.splice(from, 1); this.ours.splice(at, 0, o);
       }
       for (let y = this.y; y <= this.bot; y++) this.dirty.add(y);
       this.rule = new Array<boolean | null>(this.rows).fill(null);
     } else if (fin === "P" || fin === "@") {
       const n = Math.max(a, 1);
-      const chars = this.chars[this.y]!, fg = this.fg[this.y]!, ours = this.ours[this.y]!;
+      const chars = this.chars[this.y]!, fg = this.fg[this.y]!, bg = this.bg[this.y]!, ours = this.ours[this.y]!;
       if (fin === "P") {
         chars.splice(this.x, n); while (chars.length < this.cols) chars.push(null);
         fg.splice(this.x, n); while (fg.length < this.cols) fg.push(null);
+        bg.splice(this.x, n); while (bg.length < this.cols) bg.push(null);
         ours.splice(this.x, n); while (ours.length < this.cols) ours.push(false);
       } else {
         for (let k = 0; k < n; k++) {
           chars.splice(this.x, 0, null); chars.pop();
           fg.splice(this.x, 0, null); fg.pop();
+          bg.splice(this.x, 0, null); bg.pop();
           ours.splice(this.x, 0, false); ours.pop();
         }
       }
@@ -382,9 +407,9 @@ export class ScreenModel {
           continue;
         }
         if (nxt === 0x37 /* 7 */) {
-          this.saved = [this.x, this.y, this.curFg];
+          this.saved = [this.x, this.y, this.curFg, this.curBg];
         } else if (nxt === 0x38 /* 8 */) {
-          [this.x, this.y, this.curFg] = this.saved;
+          [this.x, this.y, this.curFg, this.curBg] = this.saved;
           this.curOurs = this.curFg !== null && this.palette.has(this.curFg);
         } else if (nxt === 0x4d /* M */) {
           if (this.y === this.top) this.scroll(1, false);
@@ -491,7 +516,8 @@ export class ScreenModel {
         if (end <= start) continue;
         const cells = span(idx[start]!, idx[end - 1]! + 1);
         if (cells.some(c => want[c] !== null)) continue;      // an earlier rule already claimed it
-        if (onlyUnstyled && cells.some(c => this.fg[y]![c] !== null && !this.ours[y]![c])) {
+        if (onlyUnstyled && cells.some(c =>
+          (this.fg[y]![c] !== null && !this.ours[y]![c]) || this.bg[y]![c] !== null)) {
           continue;                                          // user message, code, tool chrome
         }
         for (const c of cells) want[c] = fg;
@@ -508,22 +534,45 @@ export class ScreenModel {
    * a rewrite in the last column cannot scroll the screen.
    */
   corrections(rules: readonly Rule[], onlyUnstyled = true): Buffer {
-    if (!this.alt || this.dirty.size === 0) return Buffer.alloc(0);
-    const rows = [...this.dirty].sort((p, q) => p - q);
-    this.dirty = new Set();
+    if (!this.alt) return Buffer.alloc(0);
     const offLimits = this.composerRows();
+    // Rows to reconcile: everything the child touched this frame, plus the
+    // input box every frame regardless. A paint can land on the composer out
+    // of step with the frame that redrew it -- the highlighter holds a partial
+    // word and flushes it a tick later, after this row's dirty flag was already
+    // cleared -- so a dirty-only sweep leaves the user's own text coloured.
+    // Composer rows are few and desired() returns all-null for them, so an
+    // unconditional sweep simply strips any paint that reached them, at no cost
+    // on a row that carries none.
+    const todo = new Set<number>(this.dirty);
+    for (const y of offLimits) todo.add(y);
+    if (todo.size === 0) return Buffer.alloc(0);
+    const rows = [...todo].sort((p, q) => p - q);
+    this.dirty = new Set();
     const out: Buffer[] = [];
     let len = 0, spent = false;
+    // A cell wants correcting when its colour disagrees with the match. On our
+    // own cells that means either direction -- repaint a changed match or strip
+    // one that no longer holds. On a cell the child owns we only ever *add*: a
+    // default-coloured cell whose word should be painted but was not (the
+    // streaming pass missed it, e.g. a redraw split the word across an absolute
+    // cursor jump it cannot match across). A child cell already carrying a
+    // colour is left alone -- desired() never wants those anyway.
+    const needsFix = (y: number, x: number, want: (string | null)[]): boolean => {
+      if (this.fg[y]![x] === want[x]) return false;
+      return this.ours[y]![x] || (want[x] !== null && this.fg[y]![x] === null);
+    };
     for (const y of rows) {
       if (spent) { this.dirty.add(y); continue; }        // picked up by the next frame
-      if (!this.ours[y]!.some(v => v)) continue;
       const want = this.desired(y, rules, onlyUnstyled, offLimits);
+      // Nothing painted here and nothing wants painting: skip without a scan.
+      if (!this.ours[y]!.some(v => v) && !want.some(v => v !== null)) continue;
       let x = 0;
       while (x < this.cols) {
-        if (!(this.ours[y]![x] && this.fg[y]![x] !== want[x])) { x += 1; continue; }
+        if (!needsFix(y, x, want)) { x += 1; continue; }
         let start = x;
         const target = want[x]!;
-        while (x < this.cols && this.ours[y]![x] && this.fg[y]![x] !== want[x] && want[x] === target) x += 1;
+        while (x < this.cols && needsFix(y, x, want) && want[x] === target) x += 1;
         if (this.chars[y]![start] === "" && start) start -= 1;   // never start mid-way through a wide cell
         const text = this.chars[y]!.slice(start, x).filter(c => c !== "" && c !== null).join("");
         if (!text) continue;
