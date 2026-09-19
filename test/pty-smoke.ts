@@ -109,5 +109,25 @@ const ENV = environ();
   p.destroy();
 }
 
+// 6. write fidelity for bytes >= 0x80: a UTF-8 paste must reach the child as
+// the same bytes, not re-encoded. node-pty encodes a *string* as UTF-8, so a
+// backend that handed it a latin1 string would turn every high byte into two
+// and a pasted box-drawing table into mojibake -- which is how this was found.
+{
+  const payload = Buffer.concat([Buffer.from("\u250c\u2500\u2510 \u2192 ", "utf8"),
+                                 Buffer.from([0xff, 0xfe, 0x80])]);
+  const p = await ptySpawn("/bin/sh", ["-c", "stty raw -echo; exec cat"],
+    { rows: 24, cols: 80, env: ENV });
+  let got = Buffer.alloc(0);
+  p.onData(c => { got = Buffer.concat([got, c]); });
+  await sleep(200);
+  p.write(payload);
+  const deadline = Date.now() + 5000;
+  while (got.length < payload.length && Date.now() < deadline) await sleep(50);
+  report("write fidelity incl. high bytes", got.equals(payload),
+    { got: got.toString("hex"), want: payload.toString("hex") });
+  p.destroy();
+}
+
 console.log(`\n${failed === 0 ? "ALL PASS" : "FAILURES PRESENT"} (${passed} passed, ${failed} failed)`);
 process.exit(failed === 0 ? 0 : 1);

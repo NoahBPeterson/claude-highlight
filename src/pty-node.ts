@@ -50,7 +50,10 @@ export function ptySpawnNode(file: string, args: readonly string[],
     exited,
     drained,
     write(data) {
-      term.write(Buffer.from(data).toString("latin1"));
+      // Bytes, never a string: node-pty encodes a string as UTF-8 on the way
+      // out, so a latin1 view of a UTF-8 paste would be double-encoded and a
+      // pasted box-drawing table would reach the child as mojibake.
+      term.write(Buffer.from(data));
     },
     onData(cb) {
       dataCb = cb;

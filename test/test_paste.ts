@@ -58,8 +58,22 @@ function newlineHeavy(): Buffer {
   return B(s);
 }
 
+/** A box-drawing table, the way a terminal pastes one: UTF-8 bytes. Every
+ * byte is >= 0x80 in the rules, which the ASCII cases above never send. A
+ * backend that hands node-pty a latin1 *string* instead of bytes gets it
+ * re-encoded as UTF-8, and the child sees `â` where the rules were. */
+function utf8Table(): Buffer {
+  const rows = ["\u250c" + "\u2500".repeat(30) + "\u252c" + "\u2500".repeat(40) + "\u2510",
+                "\u2502 Piece" + " ".repeat(24) + "\u2502 State \u2192 done" + " ".repeat(26) + "\u2502",
+                "\u251c" + "\u2500".repeat(30) + "\u253c" + "\u2500".repeat(40) + "\u2524",
+                "\u2514" + "\u2500".repeat(30) + "\u2534" + "\u2500".repeat(40) + "\u2518"];
+  return Buffer.from(rows.join("\n") + "\n", "utf8");
+}
+
 const CASES: ReadonlyArray<readonly [string, Buffer]> = [
   ["newline-heavy 224 KB", newlineHeavy()],
+  ["UTF-8 box-drawing table paste",
+   Buffer.concat([PASTE_ON, utf8Table(), PASTE_OFF])],
   ["bracketed paste with an embedded F9",
    Buffer.concat([PASTE_ON, B("before "), F9, B(" after "),
                   Buffer.alloc(50_000, 0x78), PASTE_OFF])],
