@@ -574,13 +574,24 @@ export class ScreenModel {
         const target = want[x]!;
         while (x < this.cols && needsFix(y, x, want) && want[x] === target) x += 1;
         if (this.chars[y]![start] === "" && start) start -= 1;   // never start mid-way through a wide cell
-        const text = this.chars[y]!.slice(start, x).filter(c => c !== "" && c !== null).join("");
-        if (!text) continue;
-        const fix = Buffer.concat([
-          Buffer.from(`\x1b[${y + 1};${start + 1}H`, "latin1"),
-          Buffer.from(target ? `\x1b[${target}m` : "\x1b[39m", "latin1"),
-          Buffer.from(text, "utf8"),
-        ]);
+        // A null cell was jumped over, never written (Claude Code moves the
+        // cursor between words). Dropping it from the text would slide
+        // everything after it one cell left, so each written stretch gets
+        // its own cursor position instead.
+        const parts: Buffer[] = [];
+        let cx = start;
+        while (cx < x) {
+          if (this.chars[y]![cx] === null) { cx += 1; continue; }
+          const from = cx;
+          while (cx < x && this.chars[y]![cx] !== null) cx += 1;
+          const text = this.chars[y]!.slice(from, cx).filter(ch => ch !== "").join("");
+          if (!text) continue;
+          parts.push(Buffer.from(`\x1b[${y + 1};${from + 1}H`, "latin1"));
+          if (parts.length === 1) parts.push(Buffer.from(target ? `\x1b[${target}m` : "\x1b[39m", "latin1"));
+          parts.push(Buffer.from(text, "utf8"));
+        }
+        if (!parts.length) continue;
+        const fix = Buffer.concat(parts);
         if (len + fix.length > MAX_FIX) {
           this.dirty.add(y);          // finish this row on the next frame
           spent = true;

@@ -37,6 +37,7 @@
  */
 import type { Rule, Rewrite } from "./rules.ts"
 import { decodeIgnore } from "./util.ts"
+import { canonNumbers } from "./hedge_lexicon.ts"
 
 // --- ANSI parser states -----------------------------------------------------
 // A string union rather than an enum: the tsconfig forbids anything that is not
@@ -315,7 +316,9 @@ export class AnsiHighlighter {
       if (this.holdPrefixes !== null) {
         for (let pos = Math.max(0, vis.length - MAX_HOLD); pos < vis.length; pos++) {
           const tail = decodeIgnore(vis.subarray(pos)).toLowerCase()
-          if (tail && this.holdPrefixes.has(tail)) {
+          // A number in the tail could still grow ("about 1,431," then
+          // "421"), so it is also looked up in expand()'s collapsed form.
+          if (tail && (this.holdPrefixes.has(tail) || this.holdPrefixes.has(canonNumbers(tail)))) {
             start = pos
             break
           }

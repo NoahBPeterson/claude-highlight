@@ -21,7 +21,7 @@ export const LEXICON: Record<string, readonly string[]> = {
   appearance: [
     "seems?(?: (?:to|like|that))?", "appears?(?: (?:to|that))?", "looks like",
     "apparently", "ostensibly", "supposedly", "as far as i can tell",
-    "from what i can see", "on the surface",
+    "from what i can see", "on the surface", "suggesting",
   ],
   // Explicit unverified premise. Often honest, always worth surfacing.
   assumption: [
@@ -59,7 +59,9 @@ export const LEXICON: Record<string, readonly string[]> = {
   ],
   // Imprecision about quantity/scope.
   vagueness: [
-    "roughly", "approximately", "about \\d", "or so", "a (?:few|couple)",
+    // The number runs on through separators, so "about 1.3313" and
+    // "about 1,431,421" paint whole instead of stopping at the first digit.
+    "roughly", "approximately", "about \\d+(?:(?:\\.|,)\\d+)*", "or so", "a (?:few|couple)",
     "several", "various", "some(?:what)?", "generally",
     "typically", "usually", "often", "in most cases", "more or less",
     "basically", "essentially", "effectively", "pretty much",
@@ -93,10 +95,23 @@ export const WEIGHTS: Record<string, number> = {
   softener: 0.2,
 }
 
+/** Stands in for a whole number ("1", "1.3313", "1,431,421") in expanded
+ * literals, so an unbounded \\d+ still fits in a finite prefix set. A private
+ * use code point, so it never collides with real text. */
+export const NUM = "\uE000"
+
+/** Collapse every number in `s` to NUM, the form expand() writes \\d in. */
+export function canonNumbers(s: string): string {
+  return s.replace(/\d+(?:[.,]\d+)*/g, NUM)
+}
+
 /** Expand one lexicon pattern into the literal strings it can match.
  *
  * The patterns only use a small subset of regex -- (?:a|b) groups, optional
- * ? on a char or group, and \\d -- so a tiny recursive expander is enough.
+ * ? or * on a group, ? on a char, and \\d or \\d+ -- so a tiny recursive
+ * expander is enough. \\d becomes NUM, one placeholder for a whole number,
+ * and a group's * is read as ?: once numbers are collapsed by canonNumbers,
+ * "1,431,421" and "1,431" are the same literal.
  * Used to work out what text could still grow into a match, which is what
  * the stream filter needs in order to hold a phrase across a chunk boundary.
  */
@@ -113,7 +128,7 @@ export function expand(term: string): string[] {
       if (c === "(") {                          // "(?:" ... ")"
         let [alts, ni] = alternatives(i + 3)
         i = ni + 1                             // past ")"
-        if (i < term.length && chAt(term, i) === "?") {
+        if (i < term.length && (chAt(term, i) === "?" || chAt(term, i) === "*")) {
           i += 1
           alts = [...alts, ""]
         }
@@ -121,9 +136,9 @@ export function expand(term: string): string[] {
       } else if (c === "\\") {
         const nxt = chAt(term, i + 1)
         if (nxt === "") throw new Error("trailing backslash")
-        const pool = nxt === "d" ? "0123456789" : nxt
-        out = out.flatMap(a => [...pool].map(d => a + d))
+        out = out.map(a => a + (nxt === "d" ? NUM : nxt))
         i += 2
+        if (nxt === "d" && chAt(term, i) === "+") i += 1   // a run is still one number
       } else if (chAt(term, i + 1) === "?") {
         out = [...out.map(a => a + c), ...out]
         i += 2

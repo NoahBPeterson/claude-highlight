@@ -326,6 +326,27 @@ report(`streaming: phrases survive all ${total} chunk splits (${missed} missed)`
   missed === 0, `first miss: ${firstMiss === null ? "None" : "("
     + reprBytes(firstMiss[0]) + ", " + reprBytes(firstMiss[1]) + ")"}`)
 
+// "about \d" once stopped at the first digit, so "about 1.3313" painted
+// "about 1" and left ".3313" bare. The whole number must paint, at any split.
+const NUMBERS: [Buffer, string][] = [[B("It took about 1.3313 s."), "about 1.3313"],
+  [B("Read about 1,431,421 rows."), "about 1,431,421"], [B("Fixed about 12 files."), "about 12"],
+  [B("Step about 3. Next"), "about 3"]]
+total = 0, missed = 0, firstMiss = null
+for (const [ph, want] of NUMBERS) {
+  for (let cut = 1; cut < ph.length; cut++) {
+    total += 1
+    const [r, f] = pipeline({ rules: RULES_ONCE, pfx: PFX_ONCE, pal: PAL_ONCE })
+    const o = Buffer.concat([r(ph.subarray(0, cut), true), f(ph.subarray(cut))])
+    if (!o.includes(Buffer.concat([VAGUE, B(want), B("\x1b[39m")]))) {
+      missed += 1
+      firstMiss = firstMiss ?? [ph.subarray(0, cut), ph.subarray(cut)]
+    }
+  }
+}
+report(`streaming: 'about <number>' paints the whole number at all ${total} splits (${missed} missed)`,
+  missed === 0, `first miss: ${firstMiss === null ? "None" : "("
+    + reprBytes(firstMiss[0]) + ", " + reprBytes(firstMiss[1]) + ")"}`)
+
 ;[run, force, hl, scr] = pipeline({ rules: RULES_ONCE, pfx: PFX_ONCE, pal: PAL_ONCE })
 out = Buffer.concat([run(B("that is lik"), true), run(B("ely fine "), true), force()])
 report("streaming: split mid-word paints one word, once",
@@ -771,6 +792,17 @@ report("corrections: fix sits inside the frame's sync block",
   && out.indexOf(B("\x1b[1;12H\x1b[39mo")) < out.indexOf(B("\x1b[?2026l")), out)
 report("corrections: after fixing, nothing is stale", stale(scr, hl.rules) === 0)
 
+// A cell the child jumped over is null, never written. The fix once dropped
+// it from the rewritten text, sliding the number left onto the gap:
+// "about1,431,4211" on screen until the child next redrew the row.
+;[run, force, hl, scr] = pipeline({ cfg })
+out = force(Buffer.concat([B("\x1b[?1049h"), frame(B("\x1b[2;1Habout\x1b[2;7H1,431,421 rows"))]))
+const shown = new ScreenModel(24, 80)
+shown.reconcile(out, [])
+report("corrections: a jumped-over cell keeps its place in the fix",
+  rowtext(shown, 1) === "about 1,431,421 rows" && ours(scr, 1).length === 15,
+  rowtext(shown, 1), out)
+
 // the 4 KB cap: dirty more than fits, next frame must finish the rest
 ;[run, force, hl, scr] = pipeline({ cfg, rows: 24, cols: 80 })
 const paintAll = Buffer.concat(range(0, 24).map(y =>
@@ -933,7 +965,8 @@ for (const [cat, terms] of Object.entries(HL.LEXICON)) {
   for (const t of terms) {
     const pat = new RegExp("\\b(?:" + t + ")\\b", "i")
     for (const lit of HL.expand(t)) {
-      if (!pat.test(lit)) badLex.push(`${cat}:${t}->${JSON.stringify(lit)}`)
+      // NUM stands for any number; check it with a real one
+      if (!pat.test(lit.split(HL.NUM).join("1,431"))) badLex.push(`${cat}:${t}->${JSON.stringify(lit)}`)
     }
   }
 }
